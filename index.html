@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Extractor & Formatter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <style>
+        .copy-btn.copied {
+            background-color: #22c55e;
+            color: white;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .output-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+        }
+         .output-item:last-child {
+            border-bottom: none;
+        }
+        .output-label {
+            font-weight: 600;
+            margin-right: 0.5rem;
+            white-space: nowrap;
+            flex-shrink: 0; 
+        }
+        .output-value {
+            flex-grow: 1; 
+            text-align: left;
+            word-break: break-word;
+            margin-right: 0.5rem; 
+            padding: 0.25rem 0.5rem; 
+            border-radius: 0.25rem; 
+        }
+        .output-value[contenteditable="true"] {
+            outline: 2px solid #60a5fa; 
+            background-color: #374151; 
+        }
+        .output-value.needs-review, .output-value.suggested-invalid-hex {
+            color: #f87171; 
+        }
+        .copy-btn, .edit-btn { 
+            margin-left: 0.5rem; 
+            padding: 0.3rem 0.6rem;
+            font-size: 0.8rem;
+            transition: background-color 0.2s ease, color 0.2s ease;
+            flex-shrink: 0;
+            border-radius: 0.375rem;
+            cursor: pointer;
+        }
+        .filename-section {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem;
+            border-radius: 0.375rem;
+        }
+        #filenameOutput {
+            flex-grow: 1;
+            margin-right: 1rem;
+            padding: 0.25rem 0.5rem; 
+            border-radius: 0.25rem; 
+        }
+        #filenameOutput[contenteditable="true"] {
+            outline: 2px solid #60a5fa; 
+            background-color: #374151; 
+        }
+        #pageTitle {
+            cursor: pointer;
+            user-select: none;
+        }
+        #imageUploadLabel {
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s ease;
+            display: inline-block;
+            text-align: center;
+        }
+        #imageInput {
+            display: none;
+        }
+        .loader {
+            border: 4px solid #4A5568;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .processing {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        #dropZone {
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            text-align: center;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+        }
+        #dropZone p {
+            margin-bottom: 0.75rem;
+        }
+        #previewImageElement {
+            max-width: 100%;
+            height: auto;
+            max-height: 70vh; 
+        }
+        .edit-btn-icon { 
+            width: 1rem; 
+            height: 1rem; 
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body class="bg-slate-900 min-h-screen p-4 md:p-8 flex items-center justify-center transition-colors duration-300">
+    <div class="bg-slate-800 p-6 md:p-8 rounded-lg shadow-lg w-full max-w-2xl relative transition-colors duration-300">
+
+        <div class="flex items-center justify-center mb-6">
+            <h1 id="pageTitle" class="text-2xl font-semibold text-slate-200" title="Click to reset form (or press Backspace outside inputs)">Data Extractor & Formatter</h1>
+            <a href="https://dc.aurtho.com" target="_blank" rel="noopener noreferrer" class="ml-3 p-1 rounded-full hover:bg-slate-700 transition-colors" title="Visit DC Website">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clip-rule="evenodd" />
+                </svg>
+            </a>
+        </div>
+
+        <div class="mb-4 border-b border-slate-700">
+            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+            </nav>
+        </div>
+
+        <div class="mb-4">
+            <label for="dataInput" class="block text-sm font-medium text-slate-300 mb-1">Paste your data here:</label>
+            <div class="flex items-center space-x-2">
+                <textarea id="dataInput" rows="6" class="flex-grow p-3 border border-slate-600 rounded-md shadow-sm focus:ring-indigo-400 focus:border-indigo-400 text-sm resize-y bg-slate-700 text-slate-100 placeholder-slate-400" placeholder="Example:&#10;SKU: DC-CTO-25&#10;Font Style: Snap ITC&#10;..."></textarea>
+                <button id="pasteButton" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-400 dark:ring-offset-slate-800 transition duration-150 ease-in-out text-sm">Paste</button>
+            </div>
+        </div>
+
+        <div class="my-4 flex items-center">
+            <div class="flex-grow border-t border-slate-600"></div>
+            <span class="flex-shrink mx-4 text-slate-400 text-sm">OR</span>
+            <div class="flex-grow border-t border-slate-600"></div>
+        </div>
+
+        <div id="dropZone" class="mb-6 bg-slate-700 border-2 border-dashed border-slate-600 rounded-lg">
+            <p class="text-sm text-slate-400">Drag & Drop an image here</p>
+            <label for="imageInput" id="imageUploadLabel" class="bg-blue-600 hover:bg-blue-700 text-white">Choose Image</label>
+            <input type="file" id="imageInput" accept="image/*">
+            <span id="fileName" class="block text-sm text-slate-400 italic mt-2">No file chosen</span>
+            <p class="text-xs text-slate-500 mt-1">Image text will be extracted on submit. Accuracy depends on image quality.</p>
+        </div>
+
+
+        <div class="flex justify-end mb-6">
+            <button id="submitButton" class="px-5 py-2 bg-green-700 text-white rounded-md hover:bg-green-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400 dark:ring-offset-slate-800 transition duration-150 ease-in-out font-medium flex items-center justify-center">
+                <span>Submit</span>
+                <div id="submitSpinner" class="loader hidden ml-2"></div>
+            </button>
+        </div>
+
+        <div id="outputSection" class="space-y-4 hidden">
+            <div>
+                <h2 class="text-lg font-semibold mb-3 text-slate-200 border-b border-slate-700 pb-2 flex items-center">
+                    <span>Extracted Information</span>
+                    <span id="ocrWarningStar" class="ml-2 text-yellow-400 hidden" title="Potential OCR issues detected. Please verify extracted data.">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                            <path fill-rule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clip-rule="evenodd" />
+                        </svg>
+                    </span>
+                    <span id="ocrWarningHint" class="ml-1 text-xs text-yellow-500"></span>
+                </h2>
+                <div id="extractedInfo" class="space-y-1 bg-slate-700/50 p-4 rounded-md shadow-inner">
+                </div>
+            </div>
+
+            <div>
+                <h2 class="text-lg font-semibold mb-3 text-slate-200 border-b border-slate-700 pb-2">Generated Filename</h2>
+                <div class="filename-section bg-slate-700/50">
+                    <div id="filenameOutput" class="text-sm text-slate-200 break-words" contenteditable="false"></div>
+                    <button id="editFilenameButton" class="edit-btn p-1 bg-slate-600 text-slate-200 hover:bg-slate-500" title="Edit Filename">
+                        <svg class="edit-btn-icon" id="editIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                        </svg>
+                        <svg class="edit-btn-icon hidden" id="saveIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
+                        </svg>
+                    </button>
+                    <button id="copyFilenameButton" class="copy-btn bg-slate-600 text-slate-200 hover:bg-slate-500">Copy</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="imagePreviewSection" class="mt-6 hidden">
+            <h2 class="text-lg font-semibold mb-3 text-slate-200 border-b border-slate-700 pb-2">
+                Preview 
+            </h2>
+            <div class="bg-slate-700/50 p-4 rounded-md shadow-inner flex justify-center items-center">
+                <img id="previewImageElement" src="#" alt="Image Preview" class="rounded-md">
+            </div>
+        </div>
+
+        <div id="messageBox" class="mt-4 text-center text-sm font-medium hidden"></div>
+
+    </div>
+
+    <script>
+        const dataInput = document.getElementById('dataInput');
+        const pasteButton = document.getElementById('pasteButton');
+        const submitButton = document.getElementById('submitButton');
+        const outputSection = document.getElementById('outputSection');
+        const extractedInfoDiv = document.getElementById('extractedInfo');
+        const filenameOutputDiv = document.getElementById('filenameOutput');
+        const copyFilenameButton = document.getElementById('copyFilenameButton');
+        const editFilenameButton = document.getElementById('editFilenameButton');
+        const editIcon = document.getElementById('editIcon');
+        const saveIcon = document.getElementById('saveIcon');
+        const messageBox = document.getElementById('messageBox');
+        const pageTitle = document.getElementById('pageTitle');
+        const imageInput = document.getElementById('imageInput');
+        const fileNameSpan = document.getElementById('fileName');
+        const submitSpinner = document.getElementById('submitSpinner');
+        const dropZone = document.getElementById('dropZone');
+        const ocrWarningStar = document.getElementById('ocrWarningStar');
+        const ocrWarningHint = document.getElementById('ocrWarningHint');
+        const imagePreviewSection = document.getElementById('imagePreviewSection');
+        const previewImageElement = document.getElementById('previewImageElement');
+
+        let selectedFile = null;
+        let hasProcessedOnce = false;
+        let currentProcessedData = {}; 
+        let currentFilenameSizePart = ""; 
+
+
+        const commonColorHexMap = {
+            'indian red': '#CD5C5C', 'light coral': '#F08080', 'salmon': '#FA8072', 'dark salmon': '#E9967A', 
+            'light salmon': '#FFA07A', 'crimson': '#DC143C', 'red': '#FF0000', 'matte red': '#B33F40', 
+            'glossy red': '#DD0004', 'light red': '#C91100', 'metallic red': '#B71C1C', 'fire brick': '#B22222', 
+            'dark red': '#8B0000', 'alabama crimson': '#AF002A', 'pink': '#FFC0CB', 'matte pink': '#EC407A', 
+            'glossy pink': '#FF35B8', 'metallic pink': '#AD1457', 'light pink': '#FFB6C1', 'hot pink': '#FF69B4', 
+            'deep pink': '#FF1493', 'medium violet red': '#C71585', 'pale violet red': '#DB7093', 
+            'soft pink': '#FFB8BF', 'matte soft pink': '#D288A2', 'coral': '#FF7F50', 'tomato': '#FF6347', 'orange red': '#FF4500', 
+            'dark orange': '#FF8C00', 'orange': '#FFA500', 'matte orange': '#F57C00', 'metallic orange': '#E65100', 
+            'gold': '#FFD700', 'yellow': '#FFFF00', 'matte yellow': '#FBC02D', 'metallic yellow': '#F9A825', 'matte gold': '#D2BF37',
+            'glossy yellow': '#FFF158', 'light yellow': '#FFFFE0', 'lemon chiffon': '#FFFACD', 'papaya whip': '#FFEFD5', 'moccasin': '#FFE4B5', 
+            'peach puff': '#FFDAB9', 'pale goldenrod': '#EEE8AA', 'khaki': '#F0E68C', 'dark khaki': '#BDB76B', 
+            'brimstone yellow': '#F4D83F', 'green yellow': '#ADFF2F', 'chartreuse': '#7FFF00', 'lawn green': '#7CFC00', 
+            'lime': '#00FF00', 'matte lime': '#AFB42B', 'metallic lime': '#827717', 'lime green': '#32CD32', 
+            'lime-tree green': '#7CBF4E', 'pale green': '#98FB98', 'light green': '#90EE90', 
+            'medium spring green': '#00FA9A', 'spring green': '#00FF7F', 'medium sea green': '#3CB371', 
+            'sea green': '#2E8B57', 'forest green': '#228B22', 'green': '#00BF00', 'matte green': '#48A14D', 
+            'metallic green': '#1B5E20', 'dark green': '#006400', 'yellow green': '#9ACD32', 'olive drab': '#6B8E23', 
+            'olive': '#808000', 'dark olive green': '#556B2F', 'dark sea green': '#8FBC8F', 'light sea green': '#20B2AA', 
+            'dark cyan': '#008B8B', 'teal': '#008080', 'acid green': '#B0BF1A', 'aqua': '#00FFFF', 'cyan': '#00FFFF', 
+            'matte cyan': '#00ACC1', 'metallic cyan': '#00838F', 'light cyan': '#E0FFFF', 'pale turquoise': '#AFEEEE', 
+            'aquamarine': '#7FFFD4', 'turquoise': '#40E0D0', 'medium turquoise': '#48D1CC', 'dark turquoise': '#00CED1', 
+            'zomp': '#39A78E', 'cadet blue': '#5F9EA0', 'steel blue': '#4682B4', 'light steel blue': '#B0C4DE', 
+            'powder blue': '#B0E0E6', 'light blue': '#ADD8E6', 'sky blue': '#87CEEB', 'light sky blue': '#87CEFA', 'matte sky blue': '#7AAEC4',
+            'deep sky blue': '#00BFFF', 'dodger blue': '#1E90FF', 'cornflower blue': '#6495ED', 'matte turquoise': '#5FBDB1', 
+            'medium slate blue': '#7B68EE', 'king blue': '#152A78', 'royal blue': '#4169E1', 'blue': '#0000FF', 
+            'deep sea blue': '#015482', 'deep sea blue color': '#256794', 'matte blue': '#1976D2', 'metallic blue': '#0D47A1', 'medium blue': '#0000CD', 
+            'dark blue': '#00008B', 'navy': '#000080', 'matte navy': '#283593', 'metallic navy': '#1A237E', 
+            'midnight blue': '#191970', 'matte dark blue': '#0B0B60', 'brilliant blue': '#2752D6', 
+            'air superiority blue': '#72A0C1', 'aero blue': '#C9FFE5', 'air force blue (raf)': '#5D8AA8', 
+            'absolute zero': '#0048BA', 'aero': '#7CB9E8', 'zaffre': '#0014A8', 'lavender': '#E6E6FA', 
+            'thistle': '#D8BFD8', 'plum': '#DDA0DD', 'violet': '#EE82EE', 'matte violet': '#8658A5', 'orchid': '#DA70D6', 
+            'fuchsia': '#FF00FF', 'magenta': '#FF00FF', 'matte magenta': '#C2185B', 'metallic magenta': '#880E4F', 
+            'medium orchid': '#BA55D3', 'medium purple': '#9370DB', 'rebecca purple': '#663399', 'blue violet': '#8A2BE2', 
+            'dark violet': '#9400D3', 'dark orchid': '#9932CC', 'dark magenta': '#8B008B', 'purple': '#800080', 
+            'matte purple': '#7B1FA2', 'metallic purple': '#4A148C', 'indigo': '#4B0082', 'slate blue': '#6A5ACD', 
+            'dark slate blue': '#483D8B', 'burgundy': '#800020', 'matte burgundy': '#691C2D', 'glossy burgundy': '#800020',
+            'african violet': '#B284BE', 'cornsilk': '#FFF8DC', 'blanched almond': '#FFEBCD', 'bisque': '#FFE4C4', 
+            'navajo white': '#FFDEAD', 'wheat': '#F5DEB3', 'burly wood': '#DEB887', 'tan': '#D2B48C', 
+            'rosy brown': '#BC8F8F', 'sandy brown': '#F4A460', 'goldenrod': '#DAA520', 'dark goldenrod': '#B8860B', 
+            'peru': '#CD853F', 'chocolate': '#D2691E', 'saddle brown': '#8B4513', 'sienna': '#A0522D', 
+            'brown': '#A52A2A', 'matte brown': '#5D4037', 'metallic copper': '#D1793B', 'metallic brown': '#3E2723', 
+            'maroon': '#800000', 'zinnwaldite brown': '#2C1608', 'white': '#E6E9E9', 'matte white': '#E6E9E9', 
+            'metallic white': '#ECEFF1', 'snow': '#FFFAFA', 'honey dew': '#F0FFF0', 'mint cream': '#F5FFFA', 'mint': '#3EB489',
+            'azure': '#F0FFFF', 'alice blue': '#F0F8FF', 'ghost white': '#F8F8FF', 'white smoke': '#F5F5F5', 
+            'sea shell': '#FFF5EE', 'beige': '#F5F5DC', 'old lace': '#FDF5E6', 'floral white': '#FFFAF0', 
+            'ivory': '#FFFFF0', 'antique white': '#FAEBD7', 'linen': '#FAF0E6', 'lavender blush': '#FFF0F5', 
+            'gainsboro': '#DCDCDC', 'light gray': '#D3D3D3', 'silver': '#C0C0C0', 'dark gray': '#A9A9A9', 
+            'gray': '#808080', 'grey': '#808080', 'matte gray': '#757575', 'metallic gray': '#616161', 
+            'silver gray metallic': '#8A92A6', 'dim gray': '#696969', 'lavender gray': '#C3C5C9', 
+            'light slate gray': '#778899', 'slate gray': '#708090', 'dark slate gray': '#2F4F4F', 
+            'black': '#000000', 'matte black': '#28282B', 'velvet black': '#171717', 'metallic black': '#424242',
+            'glossy cream': '#FFFDD0', 'light brown': '#C4A484', 'gold metallic': '#D4AF37',
+            'glossy sky blue': '#87CEEB', 'glossy light blue': '#87C1FF', 'electric bright sky blue': '#56DEFF'
+        };
+        
+        const knownColorKeywords = new Set();
+
+        function initializeKnownColorKeywords() {
+            const basicColorWords = [
+                'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'violet', 'pink', 'brown', 'black', 'white', 'gray', 'grey', 
+                'cyan', 'magenta', 'teal', 'lime', 'olive', 'maroon', 'navy', 'aqua', 'fuchsia', 'silver', 'gold', 'khaki', 
+                'coral', 'salmon', 'ivory', 'beige', 'azure', 'indigo', 'plum', 'orchid', 'thistle', 'sienna', 'peru', 'tan', 'wheat',
+                'cream', 'amber', 'bronze', 'copper', 'charcoal', 'cobalt', 'coffee', 'emerald', 'jade', 'lavender', 'lemon', 
+                'lilac', 'mustard', 'ochre', 'peach', 'pearl', 'rose', 'ruby', 'sapphire', 'scarlet', 'taupe', 'turquoise', 'ultramarine', 'vermilion', 'viridian',
+                'mint'
+            ];
+            const modifiers = [
+                'light', 'dark', 'deep', 'pale', 'medium', 'bright', 'soft', 'hot', 'sky', 'sea', 'spring', 'forest', 'electric', 
+                'metallic', 'matte', 'glossy', 'powder', 'drab', 'chiffon', 'crimson', 'royal', 'slate', 'steel', 'smoke',
+                'ish', 'color' 
+            ];
+            basicColorWords.forEach(word => knownColorKeywords.add(word));
+            modifiers.forEach(word => knownColorKeywords.add(word));
+
+            Object.keys(commonColorHexMap).forEach(key => {
+                key.toLowerCase().split(/[\s-]+/).forEach(word => { 
+                    if (word) knownColorKeywords.add(word.replace(/[^a-z0-9]/g, '')); 
+                });
+            });
+        }
+        initializeKnownColorKeywords();
+
+
+        function isValidHex(hex) {
+            if (!hex) return false;
+            return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex);
+        }
+
+
+        function showMessage(text, isError = false, duration = 3000) {
+            messageBox.textContent = text;
+            messageBox.className = `mt-4 text-center text-sm font-medium ${isError ? 'text-red-400' : 'text-green-400'}`;
+            messageBox.classList.remove('hidden');
+            if (messageBox.timeoutId) {
+                clearTimeout(messageBox.timeoutId);
+            }
+            messageBox.timeoutId = setTimeout(() => {
+                messageBox.classList.add('hidden');
+                messageBox.timeoutId = null;
+            }, duration);
+        }
+
+        function showProcessingState(isProcessing) {
+            if (isProcessing) {
+                submitButton.disabled = true;
+                submitButton.classList.add('processing');
+                submitSpinner.classList.remove('hidden');
+            } else {
+                submitButton.disabled = false;
+                submitButton.classList.remove('processing');
+                submitSpinner.classList.add('hidden');
+            }
+        }
+
+        async function copyToClipboard(textToCopy, buttonElement) {
+            const text = String(textToCopy || '');
+            if (!text) {
+                showMessage('Nothing to copy.', true);
+                return;
+            }
+            const originalButtonClasses = buttonElement.className;
+            const originalText = buttonElement.textContent;
+
+            buttonElement.textContent = 'Copied!';
+            buttonElement.className = 'copy-btn copied'; 
+            let copiedSuccessfully = false;
+
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    copiedSuccessfully = true;
+                } catch (err) {
+                    console.info('Clipboard API (navigator.clipboard.writeText) failed, attempting fallback. Error:', err.name, err.message);
+                }
+            }
+
+            if (!copiedSuccessfully) {
+                try {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    textArea.style.position = "fixed"; textArea.style.left = "-9999px"; textArea.style.top = "-9999px";
+                    document.body.appendChild(textArea);
+                    textArea.focus(); textArea.select();
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+
+                    if (successful) {
+                        copiedSuccessfully = true;
+                    } else {
+                        throw new Error('Fallback copy command (document.execCommand) failed.');
+                    }
+                } catch (err) {
+                    console.error('Fallback copy failed: ', err);
+                    showMessage('Failed to copy text. Clipboard access might be blocked.', true, 4000);
+                    buttonElement.textContent = originalText;
+                    buttonElement.className = originalButtonClasses;
+                    return; 
+                }
+            }
+
+            if (copiedSuccessfully) {
+                if (buttonElement.timeoutId) clearTimeout(buttonElement.timeoutId);
+                buttonElement.timeoutId = setTimeout(() => {
+                    buttonElement.textContent = originalText;
+                    buttonElement.className = originalButtonClasses; 
+                    buttonElement.timeoutId = null;
+                }, 1500);
+            }
+        }
+
+        function extractValue(text, key) {
+            const keyIndex = text.indexOf(key);
+            if (keyIndex === -1) return null;
+            let valueStartIndex = keyIndex + key.length;
+            const potentialNextKeys = ["SKU:", "Font Style:", "Your custom text:", "Text Color:", "Text Outline Color:", "Size:", "Colors:", "Outline Colors:"];
+            const linesToIgnorePatterns = [
+                /^Customizations:/i,
+                /^Surface 1:/i,
+                /^(?:Please\s+)?(?:ignore|ingnore)\s+this\s+color(?:\s+and(?:\s+select(?:\s+(?:fron|front|from))?)?)?$/i
+            ];
+            let earliestNextKeyIndex = text.length;
+            for (const nextKey of potentialNextKeys) {
+                const currentNextKeyIndex = text.indexOf(nextKey, valueStartIndex);
+                if (currentNextKeyIndex !== -1) {
+                    const lineStartIndex = text.lastIndexOf('\n', currentNextKeyIndex) + 1;
+                    if (text.substring(lineStartIndex, currentNextKeyIndex).trim() === '') {
+                        earliestNextKeyIndex = Math.min(earliestNextKeyIndex, lineStartIndex);
+                    }
+                }
+            }
+            let rawValueBlock = text.substring(valueStartIndex, earliestNextKeyIndex);
+            const valueLines = rawValueBlock.split('\n');
+            const filteredLines = valueLines.filter(line => {
+                const trimmedLine = line.trim();
+                if (trimmedLine === '') return false;
+                for (const pattern of linesToIgnorePatterns) { 
+                    if (pattern.test(trimmedLine)) return false; 
+                }
+                return true;
+            });
+            
+            let joinedValue = filteredLines.join(' ').trim();
+
+            if (key === "Font Style:" && joinedValue) {
+                const ignorePhrasePattern = /(?:please\s+)?(?:ignore|ingnore)\s+this\s+color/i;
+                const matchIndex = joinedValue.search(ignorePhrasePattern);
+                if (matchIndex !== -1) {
+                    joinedValue = joinedValue.substring(0, matchIndex).trim();
+                }
+            }
+
+            let finalValue;
+            if (key === "Your custom text:") {
+                finalValue = joinedValue; 
+            } else {
+                finalValue = joinedValue.replace(/\s+/g, ' ').trim();
+            }
+            
+            return finalValue || null;
+        }
+
+        function extractHexCode(text) {
+            if (!text) return null;
+            const hexRegex = /#([A-Fa-f0-9]{1,6})\b/g; 
+            let potentialHex = null;
+            let match;
+            while((match = hexRegex.exec(text)) !== null) {
+                let currentMatch = match[0];
+                currentMatch = '#' + currentMatch.substring(1)
+                                .replace(/¢/g, 'c')
+                                .replace(/\$/g, 's')
+                                .replace(/g/gi, '6') 
+                                .replace(/o/gi, '0') 
+                                .replace(/i|l/gi, '1'); 
+                if (isValidHex(currentMatch)) { 
+                    if (!potentialHex || currentMatch.length > potentialHex.length) {
+                        potentialHex = currentMatch;
+                    }
+                } else if (!potentialHex && currentMatch.length > 1 && currentMatch.startsWith('#')) { 
+                    potentialHex = currentMatch; 
+                }
+            }
+            return potentialHex;
+        }
+
+        function parseColorValue(colorValue) {
+            if (!colorValue) return { descriptive: null, hex: null };
+            const ignorePattern = /^(?:Please\s+)?(?:ignore|ingnore)\s+this\s+color(?:\s+and(?:\s+select(?:\s+(?:fron|front|from))?)?)?.*$/i;
+            let workingString = colorValue.replace(ignorePattern, '').trim();
+            
+            const extractedHex = extractHexCode(workingString); 
+
+            let descriptivePart = workingString;
+            if (extractedHex) {
+                const hexPatternForRemoval = new RegExp(`\\s*\\(?\\s*${extractedHex.replace('#', '\\#')}\\s*\\)?`, 'gi');
+                descriptivePart = descriptivePart.replace(hexPatternForRemoval, ' ').trim();
+            }
+            descriptivePart = cleanColorNameForDisplay(descriptivePart);
+            
+            return { descriptive: descriptivePart || null, hex: extractedHex }; 
+        }
+        
+        function cleanColorNameForDisplay(colorName) {
+            if (!colorName) return "";
+            let cleaned = String(colorName);
+
+            cleaned = cleaned.replace(/\s*\([^)]*\)?\s*/g, ' '); 
+            cleaned = cleaned.replace(/\s*\[[^\]]*\]?\s*/g, ' '); 
+            cleaned = cleaned.replace(/#\s*[A-Fa-f0-9]+/gi, ' '); 
+            
+            cleaned = cleaned.replace(/([a-zA-Z]+)(\d+)/g, '$1 $2'); 
+            cleaned = cleaned.replace(/(\d+)([a-zA-Z]+)/g, '$1 $2'); 
+
+            let words = cleaned.split(/\s+/);
+            let significantWords = [];
+            for (const word of words) {
+                if (!word) continue;
+                const lowerWord = word.toLowerCase().replace(/[^a-z0-9-]/g, ''); 
+                if (knownColorKeywords.has(lowerWord)) {
+                    significantWords.push(word.replace(/[^a-zA-Z0-9-]/g, '')); 
+                } else if (word.includes('-')) { 
+                    const parts = word.split('-');
+                    if (parts.every(p => knownColorKeywords.has(p.toLowerCase().replace(/[^a-z0-9]/g, '')) || p === "" )) {
+                       significantWords.push(word.replace(/[^a-zA-Z0-9-]/g, ''));
+                    }
+                }
+            }
+            cleaned = significantWords.join(" ");
+            
+            cleaned = cleaned.replace(/\s+/g, ' ').trim(); 
+
+            if (cleaned) {
+              cleaned = cleaned.split(' ').map(w => {
+                if (w.toUpperCase() === 'SC' || w.toUpperCase() === 'ITC') return w.toUpperCase(); 
+                return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+              }).join(' ');
+            }
+            return cleaned;
+        }
+
+
+        function cleanColorNameForFilename(colorName) { 
+            if (!colorName) return "";
+            let cleaned = colorName.replace(/\s*\([^)]*\)\s*/g, '');
+            cleaned = cleaned.replace(/#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})\b/gi, '');
+            cleaned = cleaned.replace(/[^a-zA-Z0-9\s-]/g, '');
+            cleaned = cleaned.replace(/\s+/g, ' ').trim();
+            return cleaned;
+        }
+        
+        function getCanonicalColorName(colorName) {
+            if (!colorName) return "";
+            const cleaned = cleanColorNameForDisplay(colorName).toLowerCase();
+            return cleaned.split(/\s+/).filter(Boolean).sort().join(" ");
+        }
+
+
+        function formatSizeForDisplayAndFilename(rawSizeString) {
+            if (!rawSizeString) return { display: null, filenamePart: "" };
+
+            let mainSizeString = rawSizeString.replace(/Option to Add Complimentary Free Squeegee/gi, "").trim();
+            
+            const foundDimensions = [];
+            const dimensionRegexGlobal = /(\d+\.?\d*)\s*("|\u201D|inch(?:es)?)(?:\s*\(\s*([^)]+?)\s*\)|(?:\s+(height|length|width|h|l|w|long))?)?/gi;
+            let match;
+
+            while ((match = dimensionRegexGlobal.exec(mainSizeString)) !== null) {
+                const value = match[1];
+                let type = null;
+                const contentInParens = match[3]; 
+                const standaloneTypeWord = match[4]; 
+                let typeCandidateRaw = "";
+
+                if (contentInParens) {
+                    typeCandidateRaw = contentInParens;
+                } else if (standaloneTypeWord) {
+                    typeCandidateRaw = standaloneTypeWord;
+                }
+                
+                if (typeCandidateRaw) {
+                    let typeCandidateCleaned = typeCandidateRaw.toLowerCase().replace(/[^a-z]/g, '');
+                    if (typeCandidateCleaned.includes("len") || typeCandidateCleaned === "l" || typeCandidateCleaned === "long") type = 'L';
+                    else if (typeCandidateCleaned.includes("hei") || typeCandidateCleaned === "h") type = 'H';
+                    else if (typeCandidateCleaned.includes("wid") || typeCandidateCleaned === "w") type = 'W';
+                }
+                foundDimensions.push({ value, unit: "INCH", type });
+            }
+            
+            let lengthDim = foundDimensions.find(d => d.type === 'L');
+            let heightDim = foundDimensions.find(d => d.type === 'H');
+            let widthDim = foundDimensions.find(d => d.type === 'W');
+            
+            const untypedDims = foundDimensions.filter(d => d.type === null && d.value);
+
+            if (untypedDims.length > 0) {
+                if (!lengthDim && untypedDims.length > 0) {
+                    lengthDim = untypedDims.shift();
+                    if(lengthDim) lengthDim.type = 'L';
+                }
+                if (!heightDim && untypedDims.length > 0) {
+                    heightDim = untypedDims.shift();
+                     if(heightDim) heightDim.type = 'H';
+                }
+                if (!widthDim && untypedDims.length > 0) {
+                    widthDim = untypedDims.shift();
+                    if(widthDim) widthDim.type = 'W';
+                }
+            }
+
+            const displayParts = [];
+            if (lengthDim) displayParts.push(`${lengthDim.value} ${lengthDim.unit} ${lengthDim.type}`);
+            if (widthDim) displayParts.push(`${widthDim.value} ${widthDim.unit} ${widthDim.type}`);
+            if (heightDim) displayParts.push(`${heightDim.value} ${heightDim.unit} ${heightDim.type}`);
+
+            if (displayParts.length > 0) {
+                const finalDisplay = displayParts.join(' ');
+                return {
+                    display: finalDisplay,
+                    filenamePart: finalDisplay 
+                };
+            } else {
+                let fallbackDisplay = mainSizeString.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+                fallbackDisplay = fallbackDisplay.replace(/\bINCHES\b/gi, 'INCH').replace(/\s*("|\u201D)\s*/g, ' INCH ').trim();
+                fallbackDisplay = fallbackDisplay.replace(/[^a-zA-Z0-9\s.-]/g, ' ').replace(/\s+/g, ' ').trim(); 
+
+                let fallbackFilenamePart = fallbackDisplay;
+                if (/\b(length|long)\b/i.test(fallbackFilenamePart) && !fallbackFilenamePart.includes(" L")) {
+                    fallbackFilenamePart = fallbackFilenamePart.replace(/\b(length|long)\b/gi, 'L');
+                }
+                if (/\bheight\b/i.test(fallbackFilenamePart) && !fallbackFilenamePart.includes(" H")) {
+                    fallbackFilenamePart = fallbackFilenamePart.replace(/\bheight\b/gi, 'H');
+                }
+                 if (/\bwidth\b/i.test(fallbackFilenamePart) && !fallbackFilenamePart.includes(" W")) {
+                    fallbackFilenamePart = fallbackFilenamePart.replace(/\bwidth\b/gi, 'W');
+                }
+                fallbackFilenamePart = fallbackFilenamePart.replace(/\bINCH\b/gi, 'INCH');
+                
+                return { display: fallbackDisplay.trim() || null, filenamePart: fallbackFilenamePart.trim() || "" };
+            }
+        }
+
+        function sanitizeForFilename(filenamePart) {
+            if (!filenamePart) return "";
+            return filenamePart.replace(/[<>:"/\\|?*\x00-\x1F]/g, '');
+        }
+        
+        function updateGeneratedFilenameDisplay() {
+            let customTextPart = currentProcessedData.customText || "NoText";
+            let tcFilenamePart = cleanColorNameForFilename(currentProcessedData.textColorDescriptive);
+            let tocFilenamePart = "";
+            if (currentProcessedData.originalInputText && 
+                (currentProcessedData.originalInputText.toLowerCase().includes("text outline color:") || currentProcessedData.originalInputText.toLowerCase().includes("outline colors:")) || 
+                (currentProcessedData.outlineColorDescriptive && currentProcessedData.outlineColorDescriptive.trim() !== "")
+            ) {
+                 tocFilenamePart = cleanColorNameForFilename(currentProcessedData.outlineColorDescriptive);
+            }
+            let sizeForFilename = currentFilenameSizePart || "";
+            let skuForFilename = currentProcessedData.sku || "NoSKU";
+            
+            const tcPart = tcFilenamePart ? `(TC-${tcFilenamePart})` : "";
+            const tocPart = tocFilenamePart ? `(TOC-${tocFilenamePart})` : "";
+            const sizePart = sizeForFilename ? `(S-${sizeForFilename})` : "";
+            const skuPart = `(${skuForFilename})`;
+
+            let assembledFilename = `${customTextPart}${tcPart}${tocPart}${sizePart}${skuPart}`;
+            const generatedFilename = sanitizeForFilename(assembledFilename);
+
+            filenameOutputDiv.textContent = generatedFilename;
+            filenameOutputDiv.dataset.originalFilename = generatedFilename;
+        }
+
+        function toggleValueEdit(valueSpan, button, dataKey, label) {
+            const editSvg = button.querySelector('svg:first-child');
+            const saveSvg = button.querySelector('svg:last-child');
+
+            if (valueSpan.contentEditable === "true") {
+                valueSpan.contentEditable = "false";
+                saveSvg.classList.add('hidden');
+                editSvg.classList.remove('hidden');
+                button.title = `Edit ${label}`;
+                valueSpan.classList.remove('focus:ring-2', 'focus:ring-indigo-400', 'bg-slate-700', 'needs-review', 'suggested-invalid-hex');
+                
+                const newValue = valueSpan.textContent.trim();
+                currentProcessedData[dataKey] = newValue;
+
+                if (dataKey === 'size') {
+                    const parsedSizeInfo = formatSizeForDisplayAndFilename(newValue);
+                    currentProcessedData.size = parsedSizeInfo.display; 
+                    currentFilenameSizePart = parsedSizeInfo.filenamePart; 
+                } else if (dataKey === 'textColorDescriptive') {
+                    currentProcessedData.textColorHex = extractHexCode(newValue) || null; 
+                } else if (dataKey === 'outlineColorDescriptive') {
+                    currentProcessedData.outlineColorHex = extractHexCode(newValue) || null;
+                } else if (dataKey === 'textColorHex') {
+                    currentProcessedData.textColorHex = newValue; 
+                } else if (dataKey === 'outlineColorHex') {
+                    currentProcessedData.outlineColorHex = newValue; 
+                }
+                
+                refreshOutputDisplay(); 
+                showMessage(`${label} updated.`, false, 1500);
+
+            } else {
+                valueSpan.dataset.originalValue = valueSpan.textContent; 
+                valueSpan.contentEditable = "true";
+                editSvg.classList.add('hidden');
+                saveSvg.classList.remove('hidden');
+                button.title = `Save ${label}`;
+                valueSpan.classList.add('focus:ring-2', 'focus:ring-indigo-400', 'bg-slate-700');
+                valueSpan.focus();
+                const range = document.createRange();
+                range.selectNodeContents(valueSpan);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        }
+        
+        function createOutputRow(label, value, dataKey, copyValue = null, needsReview = false) {
+            if (value === null || value === undefined || String(value).trim() === '') return null;
+            const finalCopyValue = (copyValue !== null && copyValue !== undefined) ? String(copyValue) : String(value);
+            const displayValue = String(value);
+            const div = document.createElement('div');
+            div.className = 'output-item border-b border-slate-700';
+            
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'output-label text-slate-400';
+            labelSpan.textContent = label + ':';
+            div.appendChild(labelSpan);
+            
+            const valueSpan = document.createElement('span');
+            valueSpan.className = 'output-value text-slate-100 flex-grow';
+            if (label === "Text Hex Code" || label === "Text Outline Hex Code") {
+                if (needsReview) valueSpan.classList.add('suggested-invalid-hex');
+            } else if (needsReview) {
+                valueSpan.classList.add('needs-review');
+            }
+            valueSpan.textContent = displayValue;
+            valueSpan.dataset.originalValue = displayValue; 
+            div.appendChild(valueSpan);
+
+            const buttonsWrapper = document.createElement('div');
+            buttonsWrapper.className = 'flex items-center flex-shrink-0';
+
+            const editButton = document.createElement('button');
+            editButton.className = 'edit-btn p-1 bg-slate-600 text-slate-200 hover:bg-slate-500';
+            editButton.title = `Edit ${label}`;
+            editButton.innerHTML = `
+                <svg class="edit-btn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                </svg>
+                <svg class="edit-btn-icon hidden" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd" />
+                </svg>`;
+            editButton.onclick = () => toggleValueEdit(valueSpan, editButton, dataKey, label);
+            buttonsWrapper.appendChild(editButton);
+            
+            const copyButton = document.createElement('button');
+            copyButton.textContent = 'Copy';
+            copyButton.className = 'copy-btn bg-slate-600 text-slate-200 hover:bg-slate-500';
+            copyButton.onclick = () => copyToClipboard(finalCopyValue, copyButton);
+            buttonsWrapper.appendChild(copyButton);
+            
+            div.appendChild(buttonsWrapper);
+            return div;
+        }
+
+        function refreshOutputDisplay() {
+            extractedInfoDiv.innerHTML = ''; 
+            let hasOutput = false;
+            let customTextNeedsReviewForDisplay = false;
+            let isTextColorHexSuggestedOrInvalidForDisplay = false;
+            let isOutlineColorHexSuggestedOrInvalidForDisplay = false;
+
+            let displayTextColorDescriptiveClean = cleanColorNameForDisplay(currentProcessedData.textColorDescriptive);
+            let displayOutlineColorDescriptiveClean = cleanColorNameForDisplay(currentProcessedData.outlineColorDescriptive);
+            
+            let textColorHexForDisplay = null; 
+            let ocrTextColorHex = currentProcessedData.textColorHex; 
+
+            if (displayTextColorDescriptiveClean?.toLowerCase() === 'white') {
+                textColorHexForDisplay = '#E6E9E9';
+                isTextColorHexSuggestedOrInvalidForDisplay = true;
+            } else if (displayTextColorDescriptiveClean?.toLowerCase() === 'black') {
+                textColorHexForDisplay = null; 
+                isTextColorHexSuggestedOrInvalidForDisplay = false;
+            } else if (displayTextColorDescriptiveClean?.toLowerCase() === 'matte black') {
+                textColorHexForDisplay = '#28282B';
+                isTextColorHexSuggestedOrInvalidForDisplay = true; 
+            } else if (displayTextColorDescriptiveClean?.toLowerCase() === 'soft pink') {
+                textColorHexForDisplay = '#FFB8BF';
+                isTextColorHexSuggestedOrInvalidForDisplay = true;
+            } else if (displayTextColorDescriptiveClean?.toLowerCase() === 'matte violet' && ocrTextColorHex?.toUpperCase() === '#5D2C68' && isValidHex(ocrTextColorHex)) {
+                 textColorHexForDisplay = '#5D2C68'; 
+                 isTextColorHexSuggestedOrInvalidForDisplay = false; 
+            }
+            else { 
+                if (isValidHex(ocrTextColorHex)) { 
+                    textColorHexForDisplay = ocrTextColorHex;
+                    isTextColorHexSuggestedOrInvalidForDisplay = ocrTextColorHex.length === 4; 
+                } else {
+                    const canonicalOcrColorName = getCanonicalColorName(displayTextColorDescriptiveClean);
+                    let mapHex = null; 
+                    if (canonicalOcrColorName) {
+                        for (const mapKey in commonColorHexMap) {
+                            if (getCanonicalColorName(mapKey) === canonicalOcrColorName) {
+                                mapHex = commonColorHexMap[mapKey];
+                                break; 
+                            }
+                        }
+                    }
+                    if (mapHex) { 
+                        textColorHexForDisplay = mapHex;
+                        isTextColorHexSuggestedOrInvalidForDisplay = true; 
+                    } else {
+                        textColorHexForDisplay = "N/A";
+                        isTextColorHexSuggestedOrInvalidForDisplay = true;
+                    }
+                }
+            }
+
+
+            let outlineColorHexForDisplay = null; 
+            let ocrOutlineColorHex = currentProcessedData.outlineColorHex;
+            const outlineLabelPresentInInput = currentProcessedData.originalInputText.toLowerCase().includes("text outline color:") || currentProcessedData.originalInputText.toLowerCase().includes("outline colors:");
+            
+            if (outlineLabelPresentInInput || (currentProcessedData.outlineColorDescriptive && currentProcessedData.outlineColorDescriptive.trim() !== "") || (currentProcessedData.outlineColorHex && currentProcessedData.outlineColorHex.trim() !== "")) {
+                if (displayOutlineColorDescriptiveClean?.toLowerCase() === 'black') {
+                    outlineColorHexForDisplay = null; 
+                    isOutlineColorHexSuggestedOrInvalidForDisplay = false;
+                } else if (displayOutlineColorDescriptiveClean?.toLowerCase() === 'white') {
+                    outlineColorHexForDisplay = '#E6E9E9';
+                    isOutlineColorHexSuggestedOrInvalidForDisplay = true;
+                } else if (displayOutlineColorDescriptiveClean?.toLowerCase() === 'matte black') {
+                    outlineColorHexForDisplay = '#28282B';
+                    isOutlineColorHexSuggestedOrInvalidForDisplay = true;
+                } else if (displayOutlineColorDescriptiveClean?.toLowerCase() === 'soft pink') {
+                    outlineColorHexForDisplay = '#FFB8BF';
+                    isOutlineColorHexSuggestedOrInvalidForDisplay = true;
+                } else if (displayOutlineColorDescriptiveClean?.toLowerCase() === 'matte violet' && ocrOutlineColorHex?.toUpperCase() === '#5D2C68' && isValidHex(ocrOutlineColorHex)) {
+                    outlineColorHexForDisplay = '#5D2C68';
+                    isOutlineColorHexSuggestedOrInvalidForDisplay = false;
+                }
+                else {
+                     if (isValidHex(ocrOutlineColorHex)) {
+                        outlineColorHexForDisplay = ocrOutlineColorHex;
+                        isOutlineColorHexSuggestedOrInvalidForDisplay = ocrOutlineColorHex.length === 4;
+                    } else {
+                        const canonicalOcrOutlineColorName = getCanonicalColorName(displayOutlineColorDescriptiveClean);
+                        let mapOutlineHex = null; 
+                        if (canonicalOcrOutlineColorName) {
+                            for (const mapKey in commonColorHexMap) {
+                               if (getCanonicalColorName(mapKey) === canonicalOcrOutlineColorName) {
+                                    mapOutlineHex = commonColorHexMap[mapKey];
+                                    break;
+                                }
+                            }
+                        }
+                        if (mapOutlineHex) {
+                            outlineColorHexForDisplay = mapOutlineHex;
+                            isOutlineColorHexSuggestedOrInvalidForDisplay = true; 
+                        } else {
+                            outlineColorHexForDisplay = "N/A";
+                            isOutlineColorHexSuggestedOrInvalidForDisplay = true;
+                        }
+                    }
+                }
+            } else {
+                displayOutlineColorDescriptiveClean = null; 
+                outlineColorHexForDisplay = null;
+                isOutlineColorHexSuggestedOrInvalidForDisplay = false;
+            }
+
+
+            if (currentProcessedData.customText) {
+                const spacedCapsRegex = /(?:\b[A-Z]\s){1,}[A-Z]\b/; 
+                const potentialAcronymErrorRegex = /[A-Z][a-z][A-Z]/; 
+                const allCapsWordMin2Regex = /\b[A-Z]{2,}\b/;
+                if (spacedCapsRegex.test(currentProcessedData.customText) || 
+                    potentialAcronymErrorRegex.test(currentProcessedData.customText) ||
+                    (allCapsWordMin2Regex.test(currentProcessedData.customText) && !/[a-z]/.test(currentProcessedData.customText))
+                    ) {
+                    customTextNeedsReviewForDisplay = true; 
+                }
+            }
+            
+            function addRow(label, value, dataKey, copyValue = null, needsReviewFlag = false) {
+                const row = createOutputRow(label, value, dataKey, copyValue, needsReviewFlag);
+                if (row) { extractedInfoDiv.appendChild(row); hasOutput = true; }
+            }
+
+            addRow('SKU', currentProcessedData.sku, 'sku', currentProcessedData.sku); 
+            addRow('Font Style', currentProcessedData.fontStyle, 'fontStyle', currentProcessedData.fontStyle); 
+            addRow('Your custom text', currentProcessedData.customText, 'customText', currentProcessedData.customText, customTextNeedsReviewForDisplay); 
+            addRow('Text Color', displayTextColorDescriptiveClean, 'textColorDescriptive', displayTextColorDescriptiveClean); 
+            if (textColorHexForDisplay !== null) {
+                addRow('Text Hex Code', textColorHexForDisplay, 'textColorHex', textColorHexForDisplay, isTextColorHexSuggestedOrInvalidForDisplay); 
+            }
+            
+            if (outlineLabelPresentInInput || (currentProcessedData.outlineColorDescriptive && currentProcessedData.outlineColorDescriptive.trim() !== "") || (currentProcessedData.outlineColorHex && currentProcessedData.outlineColorHex.trim() !== "") ) {
+                 if(displayOutlineColorDescriptiveClean || outlineColorHexForDisplay) { 
+                    addRow('Text Outline Color', displayOutlineColorDescriptiveClean, 'outlineColorDescriptive', displayOutlineColorDescriptiveClean); 
+                    if (outlineColorHexForDisplay !== null) {
+                        addRow('Text Outline Hex Code', outlineColorHexForDisplay, 'outlineColorHex', outlineColorHexForDisplay, isOutlineColorHexSuggestedOrInvalidForDisplay); 
+                    }
+                }
+            }
+            addRow('Size', currentProcessedData.size, 'size', currentProcessedData.size);
+
+            const fieldsWithIssues = [];
+             if (selectedFile) { 
+                if (!currentProcessedData.sku) fieldsWithIssues.push("SKU");
+                if (!currentProcessedData.fontStyle) fieldsWithIssues.push("Font Style");
+                if (!currentProcessedData.customText || customTextNeedsReviewForDisplay) { 
+                    if (!fieldsWithIssues.includes("Custom Text")) fieldsWithIssues.push("Custom Text");
+                }
+                if (currentProcessedData.originalInputText.toLowerCase().includes("text color:") || currentProcessedData.originalInputText.toLowerCase().includes("colors:")) {
+                    if (!displayTextColorDescriptiveClean) fieldsWithIssues.push("Text Color Name");
+                    if (isTextColorHexSuggestedOrInvalidForDisplay && textColorHexForDisplay === "N/A" && 
+                        displayTextColorDescriptiveClean?.toLowerCase() !== 'black' && 
+                        displayTextColorDescriptiveClean?.toLowerCase() !== 'white' &&
+                        displayTextColorDescriptiveClean?.toLowerCase() !== 'matte black' &&
+                        displayTextColorDescriptiveClean?.toLowerCase() !== 'soft pink' &&
+                        !(displayTextColorDescriptiveClean?.toLowerCase() === 'matte violet' && ocrTextColorHex?.toUpperCase() === '#5D2C68')
+                        ) fieldsWithIssues.push("Text Hex Code");
+                }
+                if (outlineLabelPresentInInput) {
+                     if (!displayOutlineColorDescriptiveClean) fieldsWithIssues.push("Outline Color Name");
+                     if (isOutlineColorHexSuggestedOrInvalidForDisplay && outlineColorHexForDisplay === "N/A" && 
+                         displayOutlineColorDescriptiveClean?.toLowerCase() !== 'black' && 
+                         displayOutlineColorDescriptiveClean?.toLowerCase() !== 'white' &&
+                         displayOutlineColorDescriptiveClean?.toLowerCase() !== 'matte black' &&
+                         displayOutlineColorDescriptiveClean?.toLowerCase() !== 'soft pink' &&
+                         !(displayOutlineColorDescriptiveClean?.toLowerCase() === 'matte violet' && ocrOutlineColorHex?.toUpperCase() === '#5D2C68')
+                         ) fieldsWithIssues.push("Outline Hex Code");
+                }
+                const hasLength = currentProcessedData.size && currentProcessedData.size.includes(" L");
+                const hasHeight = currentProcessedData.size && currentProcessedData.size.includes(" H");
+                if (currentProcessedData.originalInputText.toLowerCase().includes("size:") && (!currentProcessedData.size || !(hasLength && hasHeight))) {
+                     fieldsWithIssues.push("Size");
+                }
+                if (fieldsWithIssues.length > 0) {
+                    ocrWarningStar.classList.remove('hidden');
+                    ocrWarningHint.textContent = `Check: ${fieldsWithIssues.join(', ')}`;
+                } else {
+                    ocrWarningStar.classList.add('hidden');
+                    ocrWarningHint.textContent = '';
+                }
+            }
+
+
+            if (!hasOutput && fieldsWithIssues.length === 0) { 
+                const noDataMsg = document.createElement('p');
+                noDataMsg.textContent = 'No relevant information could be extracted.';
+                noDataMsg.className = 'text-slate-400 italic p-2';
+                extractedInfoDiv.appendChild(noDataMsg);
+            } else if (!hasOutput && fieldsWithIssues.length > 0) { 
+                 const noDataMsg = document.createElement('p');
+                noDataMsg.textContent = 'Could not extract all expected fields. Please verify.';
+                noDataMsg.className = 'text-slate-400 italic p-2';
+                extractedInfoDiv.appendChild(noDataMsg);
+            }
+
+            updateGeneratedFilenameDisplay();
+        }
+
+
+        function processInputText(inputText) {
+            if (!inputText || !inputText.trim()) {
+                showMessage('Input text is empty after OCR or initial input.', true);
+                outputSection.classList.add('hidden');
+                ocrWarningStar.classList.add('hidden');
+                ocrWarningHint.textContent = '';
+                return;
+            }
+            
+            outputSection.classList.add('hidden');
+            ocrWarningStar.classList.add('hidden'); 
+            ocrWarningHint.textContent = '';
+
+
+            const primaryKeys = {
+                sku: "SKU:", fontStyle: "Font Style:", customText: "Your custom text:",
+                textColorFull: "Text Color:", outlineColorFull: "Text Outline Color:", size: "Size:"
+            };
+            const alternativeKeys = {
+                textColorFull: "Colors:", outlineColorFull: "Outline Colors:"
+            };
+            const rawValues = {};
+            for (const prop in primaryKeys) {
+                rawValues[prop] = extractValue(inputText, primaryKeys[prop]);
+                if (rawValues[prop] === null && alternativeKeys[prop]) {
+                    rawValues[prop] = extractValue(inputText, alternativeKeys[prop]);
+                }
+            }
+
+
+            if (rawValues.sku === "Wind-5C-25") {
+                rawValues.sku = "Wind-SC-25";
+            }
+
+            const textColorParsed = parseColorValue(rawValues.textColorFull);
+            const outlineColorParsed = parseColorValue(rawValues.outlineColorFull);
+            
+            let displaySize = null;
+            let filenameSizeForPart = "";
+            if (rawValues.size) {
+                const parsedSizeInfo = formatSizeForDisplayAndFilename(rawValues.size);
+                displaySize = parsedSizeInfo.display;
+                filenameSizeForPart = parsedSizeInfo.filenamePart;
+            }
+
+            currentProcessedData = { 
+                sku: rawValues.sku, 
+                fontStyle: rawValues.fontStyle, 
+                customText: rawValues.customText, 
+                textColorDescriptive: textColorParsed.descriptive, 
+                textColorHex: textColorParsed.hex, 
+                outlineColorDescriptive: outlineColorParsed.descriptive, 
+                outlineColorHex: outlineColorParsed.hex, 
+                size: displaySize,
+                originalInputText: inputText 
+            };
+            currentFilenameSizePart = filenameSizeForPart;
+            
+            refreshOutputDisplay(); 
+            
+            if (extractedInfoDiv.hasChildNodes() || filenameOutputDiv.textContent.trim() !== "") {
+                outputSection.classList.remove('hidden');
+                 if (ocrWarningStar.classList.contains('hidden') && !(document.querySelector('.output-value.needs-review')) && !(document.querySelector('.output-value.suggested-invalid-hex')) ) {
+                     showMessage('Data processed successfully!');
+                 } else if (selectedFile) {
+                     showMessage(`Data processed. Some fields might be missing or need review (see star/red text).`, false, 4500);
+                 }
+
+                outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (selectedFile) { 
+                    imagePreviewSection.classList.remove('hidden');
+                }
+                hasProcessedOnce = true;
+            } else {
+                showMessage('No data to display after processing.', true);
+                imagePreviewSection.classList.add('hidden'); 
+            }
+        }
+
+        function handleFileSelect(file) {
+            if (file && file.type.startsWith('image/')) {
+                if (hasProcessedOnce) {
+                    resetForm();
+                }
+                selectedFile = file; 
+                fileNameSpan.textContent = file.name; 
+                dataInput.value = '';
+                imageInput.files = createFileList(file);
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    previewImageElement.src = e.target.result;
+                }
+                reader.readAsDataURL(file);
+
+                if (!submitButton.disabled) { 
+                    submitButton.click();
+                }
+            } else { 
+                showMessage('Please select or drop an image file.', true); 
+            }
+        }
+
+        function createFileList(file) {
+            const dataTransfer = new DataTransfer(); dataTransfer.items.add(file); return dataTransfer.files;
+        }
+
+        function resetForm() {
+            dataInput.value = ''; outputSection.classList.add('hidden'); extractedInfoDiv.innerHTML = '';
+            filenameOutputDiv.textContent = '';
+            filenameOutputDiv.classList.remove('text-red-400', 'italic');
+            filenameOutputDiv.classList.add('text-slate-200');
+            filenameOutputDiv.contentEditable = "false";
+            editIcon.classList.remove('hidden');
+            saveIcon.classList.add('hidden');
+            editFilenameButton.title = "Edit Filename";
+
+            imageInput.value = ''; selectedFile = null; fileNameSpan.textContent = 'No file chosen';
+            ocrWarningStar.classList.add('hidden');
+            ocrWarningHint.textContent = '';
+            imagePreviewSection.classList.add('hidden');
+            previewImageElement.src = "#";
+            showMessage('Form reset.');
+            hasProcessedOnce = false;
+            currentProcessedData = {};
+            currentFilenameSizePart = "";
+        }
+
+        pasteButton.addEventListener('click', async () => {
+            if (navigator.clipboard && navigator.clipboard.readText && window.isSecureContext) {
+                try {
+                    const text = await navigator.clipboard.readText();
+                    dataInput.value = text; imageInput.value = ''; selectedFile = null; fileNameSpan.textContent = 'No file chosen';
+                    showMessage('Text pasted successfully!');
+                    hasProcessedOnce = false; 
+                    ocrWarningStar.classList.add('hidden');
+                    ocrWarningHint.textContent = '';
+                    imagePreviewSection.classList.add('hidden');
+                    previewImageElement.src = "#";
+                } catch (err) { console.error('Clipboard read failed: ', err); showMessage('Failed to paste. Check permissions or HTTPS.', true, 4000); }
+            } else { showMessage('Clipboard paste not available/supported (requires HTTPS).', true, 4000); }
+        });
+
+        imageInput.addEventListener('change', (event) => handleFileSelect(event.target.files[0]));
+
+        dropZone.addEventListener('dragover', (event) => {
+            event.preventDefault(); 
+            event.stopPropagation(); 
+            dropZone.classList.add('dragover', 'bg-blue-900/60', 'border-blue-500');
+            dropZone.classList.remove('bg-slate-700', 'border-slate-600');
+        });
+        dropZone.addEventListener('dragleave', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            dropZone.classList.remove('dragover', 'bg-blue-900/60', 'border-blue-500');
+            dropZone.classList.add('bg-slate-700', 'border-slate-600');
+        });
+        dropZone.addEventListener('drop', (event) => {
+            event.preventDefault();
+            event.stopPropagation(); 
+            dropZone.classList.remove('dragover', 'bg-blue-900/60', 'border-blue-500');
+            dropZone.classList.add('bg-slate-700', 'border-slate-600');
+            
+            if (event.dataTransfer?.items) {
+                if (event.dataTransfer.items.length === 1 && event.dataTransfer.items[0].kind === 'file') {
+                    const file = event.dataTransfer.items[0].getAsFile();
+                    if (file.type.startsWith('image/')) {
+                        handleFileSelect(file);
+                    } else {
+                        showMessage('Please drop an image file.', true);
+                    }
+                } else if (event.dataTransfer.items.length > 1) showMessage('Please drop only one image file.', true);
+                else showMessage('Please drop an image file.', true);
+            } else if (event.dataTransfer?.files) { 
+                if (event.dataTransfer.files.length === 1 && event.dataTransfer.files[0].type.startsWith('image/')) {
+                    handleFileSelect(event.dataTransfer.files[0]);
+                } else if (event.dataTransfer.files.length > 1) showMessage('Please drop only one image file.', true);
+                else showMessage('Please drop an image file.', true);
+            }
+        });
+
+        window.addEventListener('dragover', (event) => {
+            event.preventDefault(); 
+        }, false);
+
+        window.addEventListener('drop', (event) => {
+            event.preventDefault(); 
+            
+            if (event.dataTransfer?.items) {
+                if (event.dataTransfer.items.length === 1 && event.dataTransfer.items[0].kind === 'file') {
+                    const file = event.dataTransfer.items[0].getAsFile();
+                     if (file.type.startsWith('image/')) {
+                        handleFileSelect(file);
+                    }
+                }
+            } else if (event.dataTransfer?.files) { 
+                if (event.dataTransfer.files.length === 1 && event.dataTransfer.files[0].type.startsWith('image/')) {
+                    handleFileSelect(event.dataTransfer.files[0]);
+                }
+            }
+             dropZone.classList.remove('dragover', 'bg-blue-900/60', 'border-blue-500');
+             dropZone.classList.add('bg-slate-700', 'border-slate-600');
+        }, false);
+
+        submitButton.addEventListener('click', async () => {
+            if (submitButton.disabled) return;
+            const inputText = dataInput.value; const imageFile = selectedFile;
+            if (inputText.trim()) {
+                ocrWarningStar.classList.add('hidden'); 
+                ocrWarningHint.textContent = '';
+                imagePreviewSection.classList.add('hidden');
+                previewImageElement.src = "#";
+                processInputText(inputText);
+            } else if (imageFile) {
+                showMessage('Processing image... this may take a moment.', false, 10000);
+                showProcessingState(true);
+                try {
+                    const { data: { text } } = await Tesseract.recognize(
+                        imageFile, 
+                        'eng',
+                        {
+                            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE, 
+                            preserve_interword_spaces: '1', 
+                        }
+                    );
+                    console.log("OCR Result:", text); 
+                    processInputText(text);
+                } catch (error) { 
+                    console.error("OCR Error:", error); 
+                    showMessage(`Error during image processing: ${error.message || 'Unknown error'}`, true, 5000); 
+                    outputSection.classList.add('hidden'); 
+                    ocrWarningStar.classList.remove('hidden'); 
+                    ocrWarningHint.textContent = 'OCR Error';
+                    imagePreviewSection.classList.add('hidden'); 
+                    previewImageElement.src = "#";
+                }
+                finally { 
+                    showProcessingState(false); 
+                }
+            } else { 
+                showMessage('Please paste text or upload an image first.', true); 
+                outputSection.classList.add('hidden'); 
+                ocrWarningStar.classList.add('hidden');
+                ocrWarningHint.textContent = '';
+                imagePreviewSection.classList.add('hidden');
+                previewImageElement.src = "#";
+            }
+        });
+
+        editFilenameButton.addEventListener('click', () => {
+            if (filenameOutputDiv.contentEditable === "true") {
+                filenameOutputDiv.contentEditable = "false";
+                saveIcon.classList.add('hidden');
+                editIcon.classList.remove('hidden');
+                editFilenameButton.title = "Edit Filename";
+                filenameOutputDiv.classList.remove('focus:ring-2', 'focus:ring-indigo-400', 'bg-slate-700');
+                 showMessage('Filename saved.', false, 1500);
+            } else {
+                filenameOutputDiv.contentEditable = "true";
+                editIcon.classList.add('hidden');
+                saveIcon.classList.remove('hidden');
+                editFilenameButton.title = "Save Filename";
+                filenameOutputDiv.classList.add('focus:ring-2', 'focus:ring-indigo-400', 'bg-slate-700');
+                filenameOutputDiv.focus();
+                const range = document.createRange();
+                range.selectNodeContents(filenameOutputDiv);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        });
+
+        copyFilenameButton.addEventListener('click', () => {
+            const filenameToCopy = filenameOutputDiv.textContent;
+            if (!filenameOutputDiv.classList.contains('text-red-400') && filenameToCopy) {
+                copyToClipboard(filenameToCopy, copyFilenameButton);
+            } else { showMessage('Cannot copy filename error message or empty filename.', true); }
+        });
+
+        pageTitle.addEventListener('click', resetForm);
+
+        document.addEventListener('keydown', (event) => {
+            const activeElement = document.activeElement;
+            const targetTagName = activeElement ? activeElement.tagName.toLowerCase() : '';
+            
+            const isEditingFilename = filenameOutputDiv.contentEditable === "true";
+            const isEditingOutputValue = activeElement && activeElement.classList.contains('output-value') && activeElement.contentEditable === "true";
+            
+            const isTypingArea = targetTagName === 'textarea' || 
+                                 targetTagName === 'input' || 
+                                 (activeElement && activeElement.isContentEditable && !isEditingFilename && !isEditingOutputValue);
+
+
+            if (event.key === 'Enter') {
+                if (isEditingFilename) {
+                    event.preventDefault(); 
+                    editFilenameButton.click(); 
+                } else if (isEditingOutputValue) {
+                    event.preventDefault();
+                    const editBtn = activeElement.closest('.output-item').querySelector('.edit-btn');
+                    if(editBtn) editBtn.click();
+                }
+                 else if (!isTypingArea && targetTagName !== 'button' && !submitButton.disabled) {
+                    event.preventDefault(); 
+                    submitButton.click();
+                }
+            } else if (event.key === 'Backspace' && !isTypingArea && !isEditingFilename && !isEditingOutputValue) {
+                event.preventDefault(); 
+                resetForm();
+            } else if (event.key === 'Escape') {
+                 if (isEditingFilename) {
+                     filenameOutputDiv.textContent = filenameOutputDiv.dataset.originalFilename || filenameOutputDiv.textContent;
+                     filenameOutputDiv.contentEditable = "false";
+                     saveIcon.classList.add('hidden');
+                     editIcon.classList.remove('hidden');
+                     editFilenameButton.title = "Edit Filename";
+                     filenameOutputDiv.classList.remove('focus:ring-2', 'focus:ring-indigo-400', 'bg-slate-700');
+                 } else if (isEditingOutputValue) {
+                    const editBtn = activeElement.closest('.output-item').querySelector('.edit-btn');
+                    activeElement.textContent = activeElement.dataset.originalValue || activeElement.textContent;
+                    activeElement.contentEditable = "false";
+                    if(editBtn) {
+                        editBtn.querySelector('svg:first-child').classList.remove('hidden'); 
+                        editBtn.querySelector('svg:last-child').classList.add('hidden'); 
+                        editBtn.title = `Edit ${activeElement.closest('.output-item').querySelector('.output-label').textContent.slice(0,-1)}`;
+                    }
+                    activeElement.classList.remove('focus:ring-2', 'focus:ring-indigo-400', 'bg-slate-700');
+                 }
+            }
+        });
+    </script>
+</body>
+</html>
