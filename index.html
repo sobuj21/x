@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Data Extractor & Formatter</title>
+	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext x='50' y='50' dominant-baseline='central' text-anchor='middle' font-size='85' font-family='sans-serif' font-weight='bold' fill='%2360a5fa'%3ED%3C/text%3E%3C/svg%3E">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
     <style>
@@ -312,7 +313,7 @@
                 'coral', 'salmon', 'ivory', 'beige', 'azure', 'indigo', 'plum', 'orchid', 'thistle', 'sienna', 'peru', 'tan', 'wheat',
                 'cream', 'amber', 'bronze', 'copper', 'charcoal', 'cobalt', 'coffee', 'emerald', 'jade', 'lavender', 'lemon', 
                 'lilac', 'mustard', 'ochre', 'peach', 'pearl', 'rose', 'ruby', 'sapphire', 'scarlet', 'taupe', 'turquoise', 'ultramarine', 'vermilion', 'viridian',
-                'mint'
+                'mint', 'tree'
             ];
             const modifiers = [
                 'light', 'dark', 'deep', 'pale', 'medium', 'bright', 'soft', 'hot', 'sky', 'sea', 'spring', 'forest', 'electric', 
@@ -418,57 +419,6 @@
             }
         }
 
-        function extractValue(text, key) {
-            const keyIndex = text.indexOf(key);
-            if (keyIndex === -1) return null;
-            let valueStartIndex = keyIndex + key.length;
-            const potentialNextKeys = ["SKU:", "Font Style:", "Your custom text:", "Text Color:", "Text Outline Color:", "Size:", "Colors:", "Outline Colors:"];
-            const linesToIgnorePatterns = [
-                /^Customizations:/i,
-                /^Surface 1:/i,
-                /^(?:Please\s+)?(?:ignore|ingnore)\s+this\s+color(?:\s+and(?:\s+select(?:\s+(?:fron|front|from))?)?)?$/i
-            ];
-            let earliestNextKeyIndex = text.length;
-            for (const nextKey of potentialNextKeys) {
-                const currentNextKeyIndex = text.indexOf(nextKey, valueStartIndex);
-                if (currentNextKeyIndex !== -1) {
-                    const lineStartIndex = text.lastIndexOf('\n', currentNextKeyIndex) + 1;
-                    if (text.substring(lineStartIndex, currentNextKeyIndex).trim() === '') {
-                        earliestNextKeyIndex = Math.min(earliestNextKeyIndex, lineStartIndex);
-                    }
-                }
-            }
-            let rawValueBlock = text.substring(valueStartIndex, earliestNextKeyIndex);
-            const valueLines = rawValueBlock.split('\n');
-            const filteredLines = valueLines.filter(line => {
-                const trimmedLine = line.trim();
-                if (trimmedLine === '') return false;
-                for (const pattern of linesToIgnorePatterns) { 
-                    if (pattern.test(trimmedLine)) return false; 
-                }
-                return true;
-            });
-            
-            let joinedValue = filteredLines.join(' ').trim();
-
-            if (key === "Font Style:" && joinedValue) {
-                const ignorePhrasePattern = /(?:please\s+)?(?:ignore|ingnore)\s+this\s+color/i;
-                const matchIndex = joinedValue.search(ignorePhrasePattern);
-                if (matchIndex !== -1) {
-                    joinedValue = joinedValue.substring(0, matchIndex).trim();
-                }
-            }
-
-            let finalValue;
-            if (key === "Your custom text:") {
-                finalValue = joinedValue; 
-            } else {
-                finalValue = joinedValue.replace(/\s+/g, ' ').trim();
-            }
-            
-            return finalValue || null;
-        }
-
         function extractHexCode(text) {
             if (!text) return null;
             const hexRegex = /#([A-Fa-f0-9]{1,6})\b/g; 
@@ -477,11 +427,11 @@
             while((match = hexRegex.exec(text)) !== null) {
                 let currentMatch = match[0];
                 currentMatch = '#' + currentMatch.substring(1)
-                                .replace(/¢/g, 'c')
-                                .replace(/\$/g, 's')
-                                .replace(/g/gi, '6') 
-                                .replace(/o/gi, '0') 
-                                .replace(/i|l/gi, '1'); 
+                                        .replace(/¢/g, 'c')
+                                        .replace(/\$/g, 's')
+                                        .replace(/g/gi, '6') 
+                                        .replace(/o/gi, '0') 
+                                        .replace(/i|l/gi, '1'); 
                 if (isValidHex(currentMatch)) { 
                     if (!potentialHex || currentMatch.length > potentialHex.length) {
                         potentialHex = currentMatch;
@@ -540,10 +490,10 @@
             cleaned = cleaned.replace(/\s+/g, ' ').trim(); 
 
             if (cleaned) {
-              cleaned = cleaned.split(' ').map(w => {
-                if (w.toUpperCase() === 'SC' || w.toUpperCase() === 'ITC') return w.toUpperCase(); 
-                return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-              }).join(' ');
+                cleaned = cleaned.split(' ').map(w => {
+                    if (w.toUpperCase() === 'SC' || w.toUpperCase() === 'ITC') return w.toUpperCase(); 
+                    return w.charAt(0).toUpperCase() + w.slice(1);
+                }).join(' ');
             }
             return cleaned;
         }
@@ -883,12 +833,12 @@
 
 
             if (currentProcessedData.customText) {
-                const spacedCapsRegex = /(?:\b[A-Z]\s){1,}[A-Z]\b/; 
+                const spacedCapsRegex = /(?:\b[A-Z]\s){2,}[A-Z]\b/; 
                 const potentialAcronymErrorRegex = /[A-Z][a-z][A-Z]/; 
-                const allCapsWordMin2Regex = /\b[A-Z]{2,}\b/;
-                if (spacedCapsRegex.test(currentProcessedData.customText) || 
+                const allCapsWordWithSpacesRegex = /^[A-Z\s]+$/; 
+                 if (spacedCapsRegex.test(currentProcessedData.customText) || 
                     potentialAcronymErrorRegex.test(currentProcessedData.customText) ||
-                    (allCapsWordMin2Regex.test(currentProcessedData.customText) && !/[a-z]/.test(currentProcessedData.customText))
+                    (allCapsWordWithSpacesRegex.test(currentProcessedData.customText) && currentProcessedData.customText.includes(' '))
                     ) {
                     customTextNeedsReviewForDisplay = true; 
                 }
@@ -988,22 +938,35 @@
             ocrWarningStar.classList.add('hidden'); 
             ocrWarningHint.textContent = '';
 
-
-            const primaryKeys = {
-                sku: "SKU:", fontStyle: "Font Style:", customText: "Your custom text:",
-                textColorFull: "Text Color:", outlineColorFull: "Text Outline Color:", size: "Size:"
-            };
-            const alternativeKeys = {
-                textColorFull: "Colors:", outlineColorFull: "Outline Colors:"
-            };
+            const lines = inputText.split('\n');
             const rawValues = {};
-            for (const prop in primaryKeys) {
-                rawValues[prop] = extractValue(inputText, primaryKeys[prop]);
-                if (rawValues[prop] === null && alternativeKeys[prop]) {
-                    rawValues[prop] = extractValue(inputText, alternativeKeys[prop]);
+            const keyMap = {
+                "SKU:": "sku",
+                "Font Style:": "fontStyle",
+                "Your custom text:": "customText",
+                "Text Color:": "textColorFull",
+                "Colors:": "textColorFull",
+                "Text Outline Color:": "outlineColorFull",
+                "Outline Colors:": "outlineColorFull",
+                "Size:": "size"
+            };
+            const noiseLines = ["Customizations:", "Surface 1:"];
+
+            for(const line of lines) {
+                const trimmedLine = line.trim();
+                if(!trimmedLine) continue;
+                if(noiseLines.some(noise => trimmedLine.startsWith(noise))) continue;
+                
+                let keyFound = false;
+                for(const key in keyMap) {
+                    if(trimmedLine.startsWith(key)) {
+                        const value = trimmedLine.substring(key.length).trim();
+                        rawValues[keyMap[key]] = value;
+                        keyFound = true;
+                        break; 
+                    }
                 }
             }
-
 
             if (rawValues.sku === "Wind-5C-25") {
                 rawValues.sku = "Wind-SC-25";
@@ -1021,9 +984,9 @@
             }
 
             currentProcessedData = { 
-                sku: rawValues.sku, 
-                fontStyle: rawValues.fontStyle, 
-                customText: rawValues.customText, 
+                sku: rawValues.sku || null, 
+                fontStyle: rawValues.fontStyle || null, 
+                customText: rawValues.customText || null, 
                 textColorDescriptive: textColorParsed.descriptive, 
                 textColorHex: textColorParsed.hex, 
                 outlineColorDescriptive: outlineColorParsed.descriptive, 
@@ -1038,9 +1001,9 @@
             if (extractedInfoDiv.hasChildNodes() || filenameOutputDiv.textContent.trim() !== "") {
                 outputSection.classList.remove('hidden');
                  if (ocrWarningStar.classList.contains('hidden') && !(document.querySelector('.output-value.needs-review')) && !(document.querySelector('.output-value.suggested-invalid-hex')) ) {
-                     showMessage('Data processed successfully!');
+                      showMessage('Data processed successfully!');
                  } else if (selectedFile) {
-                     showMessage(`Data processed. Some fields might be missing or need review (see star/red text).`, false, 4500);
+                      showMessage(`Data processed. Some fields might be missing or need review (see star/red text).`, false, 4500);
                  }
 
                 outputSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1188,18 +1151,14 @@
                 previewImageElement.src = "#";
                 processInputText(inputText);
             } else if (imageFile) {
-                showMessage('Processing image... this may take a moment.', false, 10000);
+                showMessage('Processing image... this may take a moment.', false, 20000);
                 showProcessingState(true);
                 try {
                     const { data: { text } } = await Tesseract.recognize(
                         imageFile, 
-                        'eng',
-                        {
-                            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE, 
-                            preserve_interword_spaces: '1', 
-                        }
+                        'eng'
                     );
-                    console.log("OCR Result:", text); 
+                    console.log("Tesseract OCR Result:", text); 
                     processInputText(text);
                 } catch (error) { 
                     console.error("OCR Error:", error); 
@@ -1248,9 +1207,9 @@
 
         copyFilenameButton.addEventListener('click', () => {
             const filenameToCopy = filenameOutputDiv.textContent;
-            if (!filenameOutputDiv.classList.contains('text-red-400') && filenameToCopy) {
+            if (!filenameToCopy.startsWith("Error")) {
                 copyToClipboard(filenameToCopy, copyFilenameButton);
-            } else { showMessage('Cannot copy filename error message or empty filename.', true); }
+            } else { showMessage('Cannot copy error message.', true); }
         });
 
         pageTitle.addEventListener('click', resetForm);
